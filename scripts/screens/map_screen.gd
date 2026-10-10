@@ -45,6 +45,7 @@ func _ready() -> void:
 	travel_btn.visible = false
 	row.add_child(travel_btn)
 	row.add_child(UI.button("Company", func(): Game.goto("company", {"back": "map"}), 80))
+	row.add_child(UI.button("Baggage", func(): Game.goto("baggage", {"back": "map"}), 80))
 	row.add_child(UI.button("Camp (1 day)", _camp, 80))
 	bb.add_child(row)
 	v.add_child(bottom)
@@ -71,7 +72,7 @@ func _on_node_tapped(idx: int) -> void:
 		info_label.text = txt + "\nYou are here."
 		return
 	if here["links"].has(idx):
-		var d := GameData.travel_days(here, n)
+		var d := Game.travel_days_to(idx)
 		var need := Game.daily_food() * d
 		txt += "\n%d days march - eats %d food, costs %d gold" % [d, need, Game.daily_wage() * d]
 		travel_btn.text = "March to %s" % n["name"]
@@ -97,11 +98,7 @@ func _camp() -> void:
 	Game.pass_days(1)
 	var healed := 0
 	for s in Game.squads:
-		var w := int(s["wounded"])
-		var h := int(ceil(w * 0.15))
-		s["wounded"] = w - h
-		s["men"] = int(s["men"]) + h
-		healed += h
+		healed += Game.heal_squad(s, int(ceil(int(s["wounded"]) * 0.15)))
 	Game.save_game()
 	Game.notice("The company makes camp. %d wounded recover." % healed)
 	if Game.is_wiped():

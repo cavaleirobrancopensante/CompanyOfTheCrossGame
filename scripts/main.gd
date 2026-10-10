@@ -8,6 +8,9 @@ const SCREENS := {
 	"event": preload("res://scripts/screens/event_screen.gd"),
 	"battle": preload("res://scripts/screens/battle_screen.gd"),
 	"company": preload("res://scripts/screens/company_screen.gd"),
+	"squad": preload("res://scripts/screens/squad_screen.gd"),
+	"character": preload("res://scripts/screens/character_screen.gd"),
+	"baggage": preload("res://scripts/screens/baggage_screen.gd"),
 	"gameover": preload("res://scripts/screens/gameover_screen.gd"),
 }
 

@@ -6,6 +6,14 @@ The mix it aims for: **Mount & Blade** (a company you pay, feed and grow), **Tot
 
 Built in **Godot 4.7**, portrait 720×1280, GL Compatibility renderer, everything drawn in code — no art assets needed yet.
 
+## What's new in 1.1
+
+- **B/X D&D under the hood.** Every man in the company has a character sheet: 3d6 abilities with B/X modifiers, class (Fighter, Cleric, Normal Man), level, XP, hit points, AC, THAC0 and saving throws. Normal Men who survive long enough become 1st-level Fighters. Father Martin is a Cleric: blunt weapons only, and from level 2 his Cure Light Wounds raises a wounded man every day.
+- **Inventory.** Weapon, missile, armour, shield and gear slots per man, B/X prices and weights. Equip one man from his sheet, or give a whole squad chain mail at once from the squad screen.
+- **Baggage train.** Mules (2000 cn) and carts (4000 cn) carry the stash and the food. Overload it and every march takes half again as long. Buy them in town stables; buy and sell gear in the armoury; strip gear from the fallen after a victory.
+- **Battles use the sheets.** A squad's average AC, THAC0, damage and hit points decide how fast it kills and dies.
+- **First-person mode.** Tap *First person* in battle to step out of the formation as Mateo (or your best fighter) and fight with your own hands, using the fake-3D trick from MechFPS: left thumb walks, right thumb looks, STRIKE rolls a real d20 against the enemy's AC. *TO ME!* calls your squad to you; *TACTICAL* switches back. The battle never pauses: both views show the same fight. On a phone, battles turn the screen to landscape.
+
 ## What's in version 1.0a
 
 - **Campaign map of Italy** — 28 places (cities, towns, villages, monasteries, Old World ruins, brigand holds) joined by roads. Marching takes days; every day eats food and wages.
@@ -21,9 +29,11 @@ Built in **Godot 4.7**, portrait 720×1280, GL Compatibility renderer, everythin
 ```
 scenes/main.tscn            root scene (just a script)
 scripts/game_state.gd       autoload "Game": campaign state, rules, save/load, screen flow
+scripts/bx.gd               B/X rules: classes, AC, THAC0, XP, items
 scripts/game_data.gd        unit stats, enemy armies, map, events (edit this to tune/add content)
 scripts/ui.gd               theme + UI builders
-scripts/screens/*.gd        title, map (+ map_view), town, event, battle, company, game over
+scripts/screens/*.gd        title, map (+ map_view), town, event, battle (+ fps_view), company,
+                            squad, character sheet, baggage, game over
 tests/smoke_test.tscn       headless test: every screen, every event, every army
 ```
 

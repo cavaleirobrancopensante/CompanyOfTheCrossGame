@@ -12,33 +12,52 @@ const FACTION_COLORS := {
 	"": Color(0.6, 0.6, 0.6),
 }
 
-# hp = per man; atk/def = melee; ratk/range/reload = missile; cost = gold per man; wage = gold per man per 5 days
+# Mass-combat profile of each troop type. The fighting numbers come from B/X:
+# class + level + kit (weapon, missile, armour, shield). cost = gold per man; wage = gold per man per 5 days.
 const UNITS := {
-	"sword": {"name": "Sergeants", "short": "SW", "hp": 10.0, "atk": 5.0, "def": 3.0, "speed": 42.0,
-		"range": 0.0, "ratk": 0.0, "reload": 0.0, "cost": 11, "wage": 1.0, "size": 24,
+	"sword": {"name": "Sergeants", "short": "SW", "cls": "Fighter", "level": 1,
+		"kit": {"weapon": "sword", "armor": "chain", "shield": "shield"},
+		"speed": 42.0, "range": 0.0, "reload": 0.0, "cost": 14, "wage": 1.0, "size": 24,
 		"cav": false, "anti_cav": 1.0, "nerve": 1.0, "color": Color(0.85, 0.82, 0.75)},
-	"spear": {"name": "Spearmen", "short": "SP", "hp": 10.0, "atk": 3.0, "def": 4.5, "speed": 38.0,
-		"range": 0.0, "ratk": 0.0, "reload": 0.0, "cost": 8, "wage": 0.8, "size": 30,
+	"spear": {"name": "Spearmen", "short": "SP", "cls": "Normal Man", "level": 0,
+		"kit": {"weapon": "spear", "armor": "leather", "shield": "shield"},
+		"speed": 38.0, "range": 0.0, "reload": 0.0, "cost": 9, "wage": 0.8, "size": 30,
 		"cav": false, "anti_cav": 2.5, "nerve": 1.0, "color": Color(0.8, 0.8, 0.85)},
-	"xbow": {"name": "Crossbowmen", "short": "XB", "hp": 8.0, "atk": 2.0, "def": 2.5, "speed": 38.0,
-		"range": 270.0, "ratk": 4.0, "reload": 2.6, "cost": 12, "wage": 1.1, "size": 20,
+	"xbow": {"name": "Crossbowmen", "short": "XB", "cls": "Normal Man", "level": 0,
+		"kit": {"weapon": "dagger", "missile": "crossbow", "armor": "leather"},
+		"speed": 38.0, "range": 270.0, "reload": 2.6, "cost": 14, "wage": 1.1, "size": 20,
 		"cav": false, "anti_cav": 1.0, "nerve": 1.2, "color": Color(0.75, 0.85, 0.7)},
-	"knight": {"name": "Knights", "short": "KN", "hp": 16.0, "atk": 6.0, "def": 4.0, "speed": 105.0,
-		"range": 0.0, "ratk": 0.0, "reload": 0.0, "cost": 30, "wage": 3.0, "size": 12,
+	"knight": {"name": "Knights", "short": "KN", "cls": "Fighter", "level": 1,
+		"kit": {"weapon": "lance", "armor": "plate", "shield": "shield"},
+		"speed": 105.0, "range": 0.0, "reload": 0.0, "cost": 40, "wage": 3.0, "size": 12,
 		"cav": true, "anti_cav": 1.0, "nerve": 0.8, "color": Color(0.95, 0.9, 0.6)},
 	# --- enemies only ---
-	"brigand": {"name": "Brigands", "short": "BR", "hp": 9.0, "atk": 3.5, "def": 2.5, "speed": 42.0,
-		"range": 0.0, "ratk": 0.0, "reload": 0.0, "cost": 0, "wage": 0.0, "size": 24,
+	"brigand": {"name": "Brigands", "short": "BR", "cls": "Normal Man", "level": 0,
+		"kit": {"weapon": "spear", "armor": "leather"},
+		"speed": 42.0, "range": 0.0, "reload": 0.0, "cost": 0, "wage": 0.0, "size": 24,
 		"cav": false, "anti_cav": 1.0, "nerve": 1.4, "color": Color(0.6, 0.5, 0.4)},
-	"bowman": {"name": "Bowmen", "short": "BW", "hp": 8.0, "atk": 2.0, "def": 2.0, "speed": 40.0,
-		"range": 240.0, "ratk": 3.0, "reload": 2.2, "cost": 0, "wage": 0.0, "size": 16,
+	"bowman": {"name": "Bowmen", "short": "BW", "cls": "Normal Man", "level": 0,
+		"kit": {"weapon": "dagger", "missile": "short_bow"},
+		"speed": 40.0, "range": 240.0, "reload": 2.2, "cost": 0, "wage": 0.0, "size": 16,
 		"cav": false, "anti_cav": 1.0, "nerve": 1.4, "color": Color(0.55, 0.6, 0.45)},
-	"raider": {"name": "Hill Raiders", "short": "RD", "hp": 12.0, "atk": 4.0, "def": 2.5, "speed": 95.0,
-		"range": 0.0, "ratk": 0.0, "reload": 0.0, "cost": 0, "wage": 0.0, "size": 14,
+	"raider": {"name": "Hill Raiders", "short": "RD", "cls": "Fighter", "level": 1,
+		"kit": {"weapon": "spear", "armor": "leather", "shield": "shield"},
+		"speed": 95.0, "range": 0.0, "reload": 0.0, "cost": 0, "wage": 0.0, "size": 14,
 		"cav": true, "anti_cav": 1.0, "nerve": 1.2, "color": Color(0.7, 0.55, 0.35)},
-	"zealot": {"name": "Votaries", "short": "VO", "hp": 9.0, "atk": 4.5, "def": 2.0, "speed": 44.0,
-		"range": 0.0, "ratk": 0.0, "reload": 0.0, "cost": 0, "wage": 0.0, "size": 22,
+	"zealot": {"name": "Votaries", "short": "VO", "cls": "Normal Man", "level": 0,
+		"kit": {"weapon": "two_handed_sword"},
+		"speed": 44.0, "range": 0.0, "reload": 0.0, "cost": 0, "wage": 0.0, "size": 22,
 		"cav": false, "anti_cav": 1.0, "nerve": 0.5, "color": Color(0.4, 0.75, 0.85)},
+}
+
+# Loot that can turn up after a victory, by army.
+const LOOT_ITEMS := {
+	"brigands_small": ["spear", "leather", "dagger", "short_bow"],
+	"brigands_large": ["spear", "leather", "sword", "shield", "short_bow", "wineskin"],
+	"raiders": ["spear", "shield", "leather"],
+	"votaries": ["two_handed_sword", "old_world_relic", "holy_water"],
+	"scavengers": ["dagger", "rope", "old_world_relic", "leather"],
+	"condottieri": ["sword", "chain", "crossbow", "plate", "shield"],
 }
 
 const PLAYER_UNITS := ["sword", "spear", "xbow", "knight"]

@@ -21,6 +21,9 @@ var contract := {}
 var notices: Array = []
 var battle_context := {}
 var town_contracts := {}  # node id (String) -> Array of offers, refreshed on visits
+var stash := {}   # baggage train: item id -> count
+var mules := 0
+var carts := 0
 
 var rng := RandomNumberGenerator.new()
 
@@ -51,9 +54,25 @@ func new_game() -> void:
 	renown = 0
 	reputation = {"Holy See": 10, "Venice": 0, "Milan": 0, "Naples": 0}
 	squads = []
-	squads.append(make_squad("sword", 20, "Mateo's Own"))
+	var own := make_squad("sword", 18, "Mateo's Own")
+	var mateo := BX.make("Fighter", 4, {"weapon": "war_hammer", "armor": "plate", "shield": "shield"}, "Mateo 'Hammerhead'")
+	mateo["str"] = 17
+	mateo["con"] = 15
+	mateo["hero"] = true
+	mateo["max_hp"] = 30
+	mateo["hp"] = 30
+	var martin := BX.make("Cleric", 3, {"weapon": "mace", "armor": "chain", "gear": ["holy_symbol", "holy_water"]}, "Father Martin")
+	martin["wis"] = 16
+	martin["hero"] = true
+	own["members"].push_front(martin)
+	own["members"].push_front(mateo)
+	sync(own)
+	squads.append(own)
 	squads.append(make_squad("spear", 24))
 	squads.append(make_squad("xbow", 14))
+	stash = {"spear": 4, "shield": 2, "leather": 2, "dagger": 3, "holy_water": 1, "rope": 1}
+	mules = 2
+	carts = 0
 	nodes = GameData.build_map()
 	current_node = 0
 	for n in nodes:
@@ -78,7 +97,72 @@ func make_squad(type: String, men: int, squad_name: String = "") -> Dictionary:
 				break
 		if squad_name == "":
 			squad_name = "Company %d" % (squads.size() + 1)
-	return {"type": type, "name": squad_name, "men": men, "wounded": 0, "xp": 0}
+	var u: Dictionary = GameData.UNITS[type]
+	var members := []
+	for i in men:
+		var cls: String = u["cls"]
+		var lvl := int(u["level"])
+		if i == 0 and cls == "Normal Man":
+			cls = "Fighter"  # every levy has a sergeant
+			lvl = 1
+		members.append(BX.make(cls, lvl, u["kit"]))
+	var s := {"type": type, "name": squad_name, "members": members, "xp": 0}
+	sync(s)
+	return s
+
+
+## Recount the cached men / wounded numbers from the character sheets.
+func sync(s: Dictionary) -> void:
+	var ok := 0
+	var w := 0
+	for c in s["members"]:
+		if c["status"] == "ok":
+			ok += 1
+		elif c["status"] == "wounded":
+			w += 1
+	s["men"] = ok
+	s["wounded"] = w
+
+
+func sync_all() -> void:
+	for s in squads:
+		sync(s)
+
+
+func members_with(s: Dictionary, status: String, heroes: bool = true) -> Array:
+	var out := []
+	for c in s["members"]:
+		if c["status"] == status and (heroes or not c.get("hero", false)):
+			out.append(c)
+	return out
+
+
+func wound(c: Dictionary) -> void:
+	c["status"] = "wounded"
+	c["hp"] = 0
+
+
+func heal(c: Dictionary) -> void:
+	c["status"] = "ok"
+	c["hp"] = maxi(1, int(c["max_hp"]))
+
+
+## Heal up to n wounded in a squad; returns how many.
+func heal_squad(s: Dictionary, n: int) -> int:
+	var w := members_with(s, "wounded")
+	var k := mini(n, w.size())
+	for i in k:
+		heal(w[i])
+	sync(s)
+	return k
+
+
+func find_hero(hero_name: String) -> Dictionary:
+	for s in squads:
+		for c in s["members"]:
+			if c["name"] == hero_name:
+				return c
+	return {}
 
 
 func unit(type: String) -> Dictionary:
@@ -141,13 +225,23 @@ func pass_days(n: int) -> void:
 			gold = 0
 			morale -= 5
 			notice("Day %d: the pay chest is empty. The men mutter." % day)
-		# Wounded mend slowly on the road.
+		# Wounded mend slowly on the road; the bruised regain 1d3 hp a day (B/X rest).
+		var cure_slots := 0
 		for s in squads:
-			var w := int(s["wounded"])
-			if w > 0:
-				var healed := maxi(1, int(w * 0.1)) if rng.randf() < 0.5 else 0
-				s["wounded"] = w - healed
-				s["men"] = int(s["men"]) + healed
+			for c in s["members"]:
+				if c["status"] == "ok" and c["cls"] == "Cleric" and int(c["level"]) >= 2:
+					cure_slots += 1
+		for s in squads:
+			for c in s["members"]:
+				if c["status"] == "wounded":
+					if rng.randf() < 0.08:
+						heal(c)
+					elif cure_slots > 0:
+						cure_slots -= 1  # Father Martin's Cure Light Wounds
+						heal(c)
+				elif c["status"] == "ok" and int(c["hp"]) < int(c["max_hp"]):
+					c["hp"] = mini(int(c["max_hp"]), int(c["hp"]) + BX.d(3))
+			sync(s)
 		# Morale drifts toward a level set by faith.
 		var target := 45 + faith / 4
 		if morale < target:
@@ -156,9 +250,11 @@ func pass_days(n: int) -> void:
 			morale -= 1
 		if morale < 20 and total_men() > 0:
 			var s: Dictionary = squads[rng.randi() % squads.size()]
-			var lost := maxi(1, int(int(s["men"]) * 0.1))
-			lost = mini(lost, int(s["men"]))
-			s["men"] = int(s["men"]) - lost
+			var pool := members_with(s, "ok", false)
+			var lost := mini(maxi(1, int(pool.size() * 0.1)), pool.size())
+			for k in lost:
+				s["members"].erase(pool[k])
+			sync(s)
 			if lost > 0:
 				notice("Day %d: %d men of %s desert in the night." % [day, lost, s["name"]])
 		if not contract.is_empty():
@@ -175,6 +271,7 @@ func pass_days(n: int) -> void:
 
 
 func _cleanup_squads() -> void:
+	sync_all()
 	var keep := []
 	for s in squads:
 		if int(s["men"]) + int(s["wounded"]) > 0:
@@ -232,10 +329,12 @@ func apply_effects(eff: Dictionary) -> Dictionary:
 		var n := int(eff["recruit_men"])
 		var s: Dictionary = squads[0]
 		for sq in squads:
-			if not unit(sq["type"])["cav"] and squad_max(sq) - int(sq["men"]) - int(sq["wounded"]) > 0:
+			if not unit(sq["type"])["cav"] and squad_max(sq) - int(sq["members"].size()) > 0:
 				s = sq
 				break
-		s["men"] = int(s["men"]) + n
+		for k in n:
+			s["members"].append(BX.make("Normal Man", 0, unit(s["type"])["kit"]))
+		sync(s)
 		parts.append("+%d men to %s" % [n, s["name"]])
 	if eff.has("rep"):
 		var rep: Dictionary = eff["rep"]
@@ -259,14 +358,16 @@ func _lose_men(n: int, as_wounded: bool) -> int:
 	for i in n:
 		var candidates := []
 		for s in squads:
-			if int(s["men"]) > 0:
-				candidates.append(s)
+			for c in members_with(s, "ok", false):
+				candidates.append([s, c])
 		if candidates.is_empty():
 			break
-		var s: Dictionary = candidates[rng.randi() % candidates.size()]
-		s["men"] = int(s["men"]) - 1
+		var pick: Array = candidates[rng.randi() % candidates.size()]
 		if as_wounded:
-			s["wounded"] = int(s["wounded"]) + 1
+			wound(pick[1])
+		else:
+			pick[0]["members"].erase(pick[1])
+		sync(pick[0])
 		done += 1
 	return done
 
@@ -284,7 +385,9 @@ func can_afford(req: Dictionary) -> bool:
 func travel_to(idx: int) -> void:
 	var from: Dictionary = nodes[current_node]
 	var to: Dictionary = nodes[idx]
-	var days := GameData.travel_days(from, to)
+	var days := travel_days_to(idx)
+	if overloaded():
+		notice("The baggage is too heavy: the march is slow.")
 	pass_days(days)
 	current_node = idx
 	to["visited"] = true
@@ -385,29 +488,53 @@ func start_battle(army: String, after: String) -> void:
 	goto("battle", {"army": army})
 
 
-## result: {victory: bool, losses: Array[int] per squad index, killed: int, kills: Array[int]}
+## result: {victory, losses: Array[int] per squad index, kills: Array[int], enemy_dead: int}
 func apply_battle_result(result: Dictionary) -> String:
 	var lines := []
+	var level_msgs := []
 	var victory: bool = result["victory"]
 	var wounded_share := 0.5 if victory else 0.25
 	var losses: Array = result["losses"]
 	var kills: Array = result["kills"]
+	var enemy_dead := int(result.get("enemy_dead", 0))
 	var total_dead := 0
 	var total_wounded_new := 0
 	for i in squads.size():
 		var s: Dictionary = squads[i]
 		var lost := int(losses[i]) if i < losses.size() else 0
-		lost = mini(lost, int(s["men"]))
-		var w := int(round(lost * wounded_share))
-		s["men"] = int(s["men"]) - lost
-		s["wounded"] = int(s["wounded"]) + w
-		total_dead += lost - w
-		total_wounded_new += w
+		# The men fall first; heroes only go down when the squad is broken, and never die.
+		var pool := members_with(s, "ok", false)
+		pool.shuffle()
+		var heroes := members_with(s, "ok", true).filter(func(c): return c.get("hero", false))
+		for k in mini(lost, pool.size() + heroes.size()):
+			if k < pool.size():
+				var c: Dictionary = pool[k]
+				var save_chance := wounded_share + BX.mod(int(c["con"])) * 0.05
+				if rng.randf() < save_chance:
+					wound(c)
+					total_wounded_new += 1
+				else:
+					s["members"].erase(c)
+					total_dead += 1
+			else:
+				var h: Dictionary = heroes[k - pool.size()]
+				wound(h)
+				total_wounded_new += 1
+				lines.append("%s is carried wounded from the field." % h["name"])
+		sync(s)
 		var before := squad_level(s)
 		var k := int(kills[i]) if i < kills.size() else 0
 		s["xp"] = int(s["xp"]) + (12 if victory else 4) + k
 		if squad_level(s) > before:
 			lines.append("%s are now veterans (rank %d)!" % [s["name"], squad_level(s)])
+		# B/X experience: a share for every survivor, more for heroes.
+		var per_man := (10 if victory else 3) + int(k * 10.0 / maxf(1.0, s["members"].size()))
+		for c in s["members"]:
+			if c["status"] == "ok":
+				var gain := per_man * (5 if c.get("hero", false) else 1) + (enemy_dead * 5 if c.get("hero", false) else 0)
+				var m := BX.gain_xp(c, gain)
+				if m != "":
+					level_msgs.append(m)
 	lines.push_front("%d dead, %d wounded." % [total_dead, total_wounded_new])
 	var army: Dictionary = GameData.ARMIES.get(battle_context.get("army", ""), {})
 	if victory:
@@ -417,6 +544,16 @@ func apply_battle_result(result: Dictionary) -> String:
 		renown += 2
 		morale = clampi(morale + 8, 0, 100)
 		lines.append("Victory! %d gold taken from the field." % loot)
+		var pool_items: Array = GameData.LOOT_ITEMS.get(battle_context.get("army", ""), [])
+		var got := []
+		for k in mini(1 + enemy_dead / 8, 6):
+			if pool_items.is_empty():
+				break
+			var it: String = pool_items[rng.randi() % pool_items.size()]
+			add_item(it)
+			got.append(BX.ITEMS[it]["name"])
+		if not got.is_empty():
+			lines.append("Gear stripped from the fallen: " + ", ".join(got) + ".")
 		if battle_context.has("clear"):
 			nodes[int(battle_context["clear"])]["cleared"] = true
 			lines.append("%s is cleared." % nodes[int(battle_context["clear"])]["name"])
@@ -430,6 +567,11 @@ func apply_battle_result(result: Dictionary) -> String:
 		gold -= lost_gold
 		food -= lost_food
 		lines.append("Defeat. The baggage is plundered: -%d gold, -%d food." % [lost_gold, lost_food])
+	if level_msgs.size() > 4:
+		var extra := level_msgs.size() - 4
+		level_msgs = level_msgs.slice(0, 4)
+		level_msgs.append("...and %d more advance." % extra)
+	lines.append_array(level_msgs)
 	_cleanup_squads()
 	save_game()
 	return "\n".join(lines)
@@ -559,7 +701,7 @@ func hire_cost(type: String) -> int:
 func reinforce_cost() -> int:
 	var c := 0.0
 	for s in squads:
-		var missing := squad_max(s) - int(s["men"]) - int(s["wounded"])
+		var missing := squad_max(s) - int(s["members"].size())
 		if missing > 0:
 			c += missing * unit(s["type"])["cost"]
 	return int(c * price_mult())
@@ -567,9 +709,11 @@ func reinforce_cost() -> int:
 
 func reinforce_all() -> void:
 	for s in squads:
-		var missing := squad_max(s) - int(s["men"]) - int(s["wounded"])
-		if missing > 0:
-			s["men"] = int(s["men"]) + missing
+		var missing := squad_max(s) - int(s["members"].size())
+		var u := unit(s["type"])
+		for i in maxi(0, missing):
+			s["members"].append(BX.make(u["cls"], int(u["level"]), u["kit"]))
+		sync(s)
 
 
 # ---------------------------------------------------------------- save / load
@@ -583,6 +727,7 @@ func save_game() -> void:
 		"gold": gold, "food": food, "day": day, "morale": morale, "faith": faith, "renown": renown,
 		"reputation": reputation, "squads": squads, "nodes": nodes, "current_node": current_node,
 		"contract": contract, "town_contracts": town_contracts,
+		"stash": stash, "mules": mules, "carts": carts,
 	}
 	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
 	if f:
@@ -610,8 +755,23 @@ func load_game() -> bool:
 		reputation[k] = int(data["reputation"][k])
 	squads = []
 	for s in data["squads"]:
-		squads.append({"type": s["type"], "name": s["name"], "men": int(s["men"]),
-			"wounded": int(s["wounded"]), "xp": int(s["xp"])})
+		var members := []
+		for c in s.get("members", []):
+			for k in ["level", "xp", "hp", "max_hp", "str", "int", "wis", "dex", "con", "cha"]:
+				c[k] = int(c[k])
+			var gear := []
+			for g in c.get("gear", []):
+				gear.append(str(g))
+			c["gear"] = gear
+			members.append(c)
+		var sq := {"type": s["type"], "name": s["name"], "members": members, "xp": int(s["xp"])}
+		sync(sq)
+		squads.append(sq)
+	stash = {}
+	for k in data.get("stash", {}):
+		stash[k] = int(data["stash"][k])
+	mules = int(data.get("mules", 0))
+	carts = int(data.get("carts", 0))
 	nodes = []
 	for n in data["nodes"]:
 		var links := []
@@ -642,3 +802,98 @@ func _fix_ints(c: Dictionary) -> Dictionary:
 func delete_save() -> void:
 	if has_save():
 		DirAccess.remove_absolute(SAVE_PATH)
+
+
+# ---------------------------------------------------------------- baggage
+
+func add_item(item: String, n: int = 1) -> void:
+	stash[item] = int(stash.get(item, 0)) + n
+
+
+func take_item(item: String) -> bool:
+	if int(stash.get(item, 0)) <= 0:
+		return false
+	stash[item] = int(stash[item]) - 1
+	if int(stash[item]) <= 0:
+		stash.erase(item)
+	return true
+
+
+func capacity_cn() -> int:
+	return BX.BASE_CN + mules * BX.MULE_CN + carts * BX.CART_CN
+
+
+func load_cn() -> int:
+	var t := food * BX.FOOD_CN
+	for k in stash:
+		t += int(BX.ITEMS[k]["cn"]) * int(stash[k])
+	return t
+
+
+func overloaded() -> bool:
+	return load_cn() > capacity_cn()
+
+
+func travel_days_to(idx: int) -> int:
+	var d := GameData.travel_days(nodes[current_node], nodes[idx])
+	if overloaded():
+		d = int(ceil(d * 1.5))
+	return d
+
+
+## Put an item from the baggage on a character. Returns "" or the reason it failed.
+func equip(c: Dictionary, item: String) -> String:
+	if int(stash.get(item, 0)) <= 0:
+		return "None left in the baggage."
+	var why := BX.can_use(c, item)
+	if why != "":
+		return why
+	var it: Dictionary = BX.ITEMS[item]
+	var slot: String = it["slot"]
+	take_item(item)
+	if slot == "gear":
+		c["gear"].append(item)
+		return ""
+	if c.get(slot, "") != "":
+		add_item(c[slot])
+	c[slot] = item
+	if it.get("two_handed", false) and c.get("shield", "") != "":
+		add_item(c["shield"])
+		c["shield"] = ""
+	return ""
+
+
+func unequip(c: Dictionary, slot: String, gear_index: int = -1) -> void:
+	if slot == "gear":
+		if gear_index >= 0 and gear_index < c["gear"].size():
+			add_item(c["gear"][gear_index])
+			c["gear"].remove_at(gear_index)
+		return
+	if c.get(slot, "") != "":
+		add_item(c[slot])
+		c[slot] = ""
+
+
+## Give everyone in a squad who lacks a better piece this item, while stock lasts.
+func outfit_squad(s: Dictionary, item: String) -> int:
+	var it: Dictionary = BX.ITEMS[item]
+	var slot: String = it["slot"]
+	var n := 0
+	for c in s["members"]:
+		if int(stash.get(item, 0)) <= 0:
+			break
+		if c.get(slot, "") == item:
+			continue
+		if slot == "armor" and c.get("armor", "") != "" and int(BX.ITEMS[c["armor"]]["ac"]) <= int(it["ac"]):
+			continue
+		if equip(c, item) == "":
+			n += 1
+	return n
+
+
+func item_price(item: String) -> int:
+	return maxi(1, int(BX.ITEMS[item]["gp"] * price_mult()))
+
+
+func sell_price(item: String) -> int:
+	return maxi(1, int(BX.ITEMS[item]["gp"] / 2))

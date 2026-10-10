@@ -35,6 +35,10 @@ func _build() -> void:
 			_build_recruit()
 		"contracts":
 			_build_contracts()
+		"armoury":
+			_build_armoury()
+		"stables":
+			_build_stables()
 		_:
 			_build_main(n)
 
@@ -60,6 +64,16 @@ func _build_main(n: Dictionary) -> void:
 			message = ""
 			_build()))
 	if kind in ["city", "town"]:
+		root_box.add_child(UI.button("Armoury and market", func():
+			tab = "armoury"
+			message = ""
+			_build()))
+	if kind != "monastery":
+		root_box.add_child(UI.button("Stables (mules and carts)", func():
+			tab = "stables"
+			message = ""
+			_build()))
+	if kind in ["city", "town"]:
 		root_box.add_child(UI.button("Contracts board", func():
 			tab = "contracts"
 			message = ""
@@ -82,7 +96,7 @@ func _build_main(n: Dictionary) -> void:
 		Game.morale = mini(100, Game.morale + 3)
 		_act("The company rests. %d wounded return to the ranks.\n%s" % [healed, Game.pop_notices()])))
 
-	root_box.add_child(UI.button("The Company", func(): Game.goto("company", {"back": "town"})))
+	root_box.add_child(UI.button("The Company - sheets and gear", func(): Game.goto("company", {"back": "town"})))
 	root_box.add_child(UI.button("March out to the map", func():
 		Game.save_game()
 		Game.goto("map"), 90))
@@ -92,11 +106,7 @@ func _build_main(n: Dictionary) -> void:
 func _heal(frac: float) -> int:
 	var total := 0
 	for s in Game.squads:
-		var w := int(s["wounded"])
-		var h := int(ceil(w * frac))
-		s["wounded"] = w - h
-		s["men"] = int(s["men"]) + h
-		total += h
+		total += Game.heal_squad(s, int(ceil(int(s["wounded"]) * frac)))
 	return total
 
 
@@ -118,7 +128,9 @@ func _build_recruit() -> void:
 		var type: String = t
 		var u: Dictionary = Game.unit(type)
 		var cost := Game.hire_cost(type)
-		var b := UI.button("%s  x%d  -  %d gold\natk %d  def %s  %s" % [u["name"], u["size"], cost, int(u["atk"]), str(u["def"]), _unit_note(u)], func():
+		var kit: Dictionary = u["kit"]
+		var kit_txt := ", ".join(kit.values().map(func(k): return BX.ITEMS[k]["name"].to_lower()))
+		var b := UI.button("%s  x%d  -  %d gold\n%s %d, %s - %s" % [u["name"], u["size"], cost, u["cls"], int(u["level"]), kit_txt, _unit_note(u)], func():
 			Game.gold -= cost
 			Game.squads.append(Game.make_squad(type, int(u["size"])))
 			_act("A new squad of %s swears on the Cross." % u["name"]), 96)
@@ -168,3 +180,73 @@ func _build_contracts() -> void:
 		tab = "main"
 		message = ""
 		_build()))
+
+
+func _back_button() -> void:
+	root_box.add_child(UI.button("Back", func():
+		tab = "main"
+		message = ""
+		_build()))
+
+
+func _build_armoury() -> void:
+	root_box.add_child(UI.label("Armoury - buy into the baggage", 28, UI.GOLD))
+	root_box.add_child(UI.label("Load %d / %d cn" % [Game.load_cn(), Game.capacity_cn()], 22, UI.BAD if Game.overloaded() else UI.DIM))
+	for item in BX.SHOP_ITEMS:
+		var it: String = item
+		var info: Dictionary = BX.ITEMS[it]
+		var price := Game.item_price(it)
+		var stat := ""
+		if info.has("dmg"):
+			stat = " d%d" % int(info["dmg"])
+		elif info.has("ac"):
+			stat = " AC %d" % int(info["ac"]) if info["slot"] == "armor" else " AC -1"
+		var b := UI.button("%s%s - %d gp (%d cn)" % [info["name"], stat, price, int(info["cn"])], func():
+			Game.gold -= price
+			Game.add_item(it)
+			_act("Bought: %s. It goes on the mules." % info["name"]), 66)
+		b.disabled = Game.gold < price
+		root_box.add_child(b)
+	if not Game.stash.is_empty():
+		root_box.add_child(UI.label("Sell from the baggage (half price)", 28, UI.GOLD))
+		var keys := Game.stash.keys()
+		keys.sort()
+		for item in keys:
+			var it: String = item
+			var p := Game.sell_price(it)
+			root_box.add_child(UI.button("Sell %s (%d left) - %d gp" % [BX.ITEMS[it]["name"], int(Game.stash[it]), p], func():
+				if Game.take_item(it):
+					Game.gold += p
+				_act("Sold: %s." % BX.ITEMS[it]["name"]), 66))
+	_back_button()
+
+
+func _build_stables() -> void:
+	root_box.add_child(UI.label("Stables", 28, UI.GOLD))
+	root_box.add_child(UI.label("%d mules, %d carts. Load %d / %d cn." % [Game.mules, Game.carts, Game.load_cn(), Game.capacity_cn()], 22, UI.BAD if Game.overloaded() else UI.DIM))
+	var bm := UI.button("Buy a mule - %d gp (+%d cn)" % [BX.MULE_GP, BX.MULE_CN], func():
+		Game.gold -= BX.MULE_GP
+		Game.mules += 1
+		_act("A mule with a mean eye joins the train."))
+	bm.disabled = Game.gold < BX.MULE_GP
+	root_box.add_child(bm)
+	var bc := UI.button("Buy a cart and its horses - %d gp (+%d cn)" % [BX.CART_GP, BX.CART_CN], func():
+		Game.gold -= BX.CART_GP
+		Game.carts += 1
+		_act("A creaking cart joins the train."))
+	bc.disabled = Game.gold < BX.CART_GP
+	root_box.add_child(bc)
+	var sm := UI.button("Sell a mule - %d gp" % (BX.MULE_GP / 2), func():
+		Game.mules -= 1
+		Game.gold += BX.MULE_GP / 2
+		_act("Sold a mule."))
+	sm.disabled = Game.mules <= 0
+	root_box.add_child(sm)
+	var sc := UI.button("Sell a cart - %d gp" % (BX.CART_GP / 2), func():
+		Game.carts -= 1
+		Game.gold += BX.CART_GP / 2
+		_act("Sold a cart."))
+	sc.disabled = Game.carts <= 0
+	root_box.add_child(sc)
+	root_box.add_child(UI.button("Look over the baggage", func(): Game.goto("baggage", {"back": "town"})))
+	_back_button()
